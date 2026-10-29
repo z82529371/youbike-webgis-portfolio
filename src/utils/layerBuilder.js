@@ -21,7 +21,8 @@ export function buildDeckLayers({
   stations = [],
   flows = [],
   visibility = { scatterplot: true, hexagon: true, arc: true },
-  onStationClick = () => {}
+  onStationClick = () => {},
+  onHover = () => {}
 }) {
   const layers = [];
 
@@ -45,6 +46,7 @@ export function buildDeckLayers({
         getLineColor: [255, 255, 255, 200],
         autoHighlight: true,
         highlightColor: [255, 255, 255, 120],
+        onHover,
         onClick: info => {
           if (info.object) {
             onStationClick(info.object);
@@ -75,7 +77,8 @@ export function buildDeckLayers({
           diffuse: 0.6,
           shininess: 32,
           specularColor: [51, 51, 51]
-        }
+        },
+        onHover
       })
     );
   }
@@ -90,11 +93,11 @@ export function buildDeckLayers({
         getWidth: 3.5,
         getSourcePosition: d => d.fromCoordinates,
         getTargetPosition: d => d.toCoordinates,
-        // 起點流光漸變至迄點 (藍 -> 粉紫)
         getSourceColor: [59, 130, 246, 220],
         getTargetColor: [236, 72, 153, 240],
         autoHighlight: true,
-        highlightColor: [255, 255, 255, 160]
+        highlightColor: [255, 255, 255, 160],
+        onHover
       })
     );
   }
