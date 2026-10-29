@@ -1,4 +1,29 @@
-node_modules
-dist
-.DS_Store
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+dist-ssr/
+
+# Lock files (避免大體積 lockfile 污染 git diff)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment & Local overrides
+.env
+.env.local
+.env.*.local
 *.local
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
