@@ -4,6 +4,11 @@ import {
   filterStations,
   generateODFlows,
   generateTripsData,
+  calculateDistance,
+  estimateWalkMinutes,
+  getStationStatusColor,
+  findAlternativeStations,
+  searchStations,
 } from "../src/utils/dataTransform.js";
 
 describe("WebGIS Data Transformation Seams (JavaScript)", () => {
@@ -139,6 +144,65 @@ describe("WebGIS Data Transformation Seams (JavaScript)", () => {
           firstTrip.path[i - 1][2]
         );
       }
+    });
+  });
+
+  describe("Commuter Mobility Utilities (Seam 5)", () => {
+    let stations;
+
+    beforeEach(() => {
+      stations = transformStationData(mockRawStations);
+    });
+
+    it("calculates spherical distance and walking time correctly", () => {
+      // Station 0 and Station 1 are very close on Fuxing S. Rd (~45 meters)
+      const dist = calculateDistance(
+        stations[0].coordinates,
+        stations[1].coordinates
+      );
+      expect(dist).toBeGreaterThan(30);
+      expect(dist).toBeLessThan(70);
+
+      const walkTime = estimateWalkMinutes(dist);
+      expect(walkTime).toBe(1); // < 80 meters -> 1 minute
+    });
+
+    it("evaluates station status color based on commuter intent", () => {
+      // Station 0 has availableBikes = 0 (empty), emptySpaces = 28 (normal)
+      const borrowColor = getStationStatusColor(stations[0], "borrow");
+      expect(borrowColor).toEqual([239, 68, 68]); // Red
+
+      const returnColor = getStationStatusColor(stations[0], "return");
+      expect(returnColor).toEqual([16, 185, 129]); // Green (normal)
+    });
+
+    it("finds alternative stations within walking distance when target is empty", () => {
+      // Target is station 0 (0 bikes). Station 1 has 2 bikes (<3), Station 2 has 10 bikes (>=3).
+      // Station 2 is ~300m away, has 10 bikes, so it should be the alternative station for borrow mode.
+      const alternatives = findAlternativeStations(
+        stations[0],
+        stations,
+        "borrow",
+        2,
+        800
+      );
+      expect(alternatives).toHaveLength(1);
+      expect(alternatives[0].id).toBe("500101003"); // Station 3 (10 bikes)
+      expect(alternatives[0].availableBikes).toBeGreaterThanOrEqual(3);
+      expect(alternatives[0].distance).toBeGreaterThan(0);
+      expect(alternatives[0].walkMinutes).toBeGreaterThanOrEqual(1);
+    });
+
+    it("searches stations by keyword matching name, district or address", () => {
+      const byName = searchStations(stations, "科技大樓");
+      expect(byName).toHaveLength(1);
+      expect(byName[0].name).toContain("科技大樓");
+
+      const byDistrict = searchStations(stations, "大安");
+      expect(byDistrict).toHaveLength(2);
+
+      const byAddress = searchStations(stations, "和平東路");
+      expect(byAddress).toHaveLength(1);
     });
   });
 });

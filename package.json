@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "predeploy": "npm run build",
+    "predeploy": "pnpm build",
     "deploy": "gh-pages -d dist",
     "test": "vitest run",
     "lint": "eslint .",

@@ -1,68 +1,76 @@
 import { ScatterplotLayer } from "@deck.gl/layers";
-import { HexagonLayer } from "@deck.gl/aggregation-layers";
-import { ArcLayer } from "@deck.gl/layers";
-import { TripsLayer } from "@deck.gl/geo-layers";
 import { DataFilterExtension } from "@deck.gl/extensions";
-
-// 3D 蜂巢熱度色彩比例階梯 (GPU 著色漸層：深藍 -> 青綠 -> 亮黃 -> 橙紅)
-const HEXAGON_COLOR_RANGE = [
-  [30, 58, 138, 200], // 深海藍
-  [14, 165, 233, 210], // 天空藍
-  [16, 185, 129, 220], // 翡翠綠
-  [234, 179, 8, 230], // 亮黃
-  [249, 115, 22, 240], // 鮮橙
-  [239, 68, 68, 255], // 警示紅
-];
+import { getStationStatusColor } from "./dataTransform.js";
 
 /**
- * 依據當前狀態與可見性動態建立 deck.gl 圖層陣列
+ * 依據市民用車意圖（我要借車 / 我要還車）建立空間渲染圖層
  * @param {Object} params
  * @returns {Array} deck.gl Layer 物件清單
  */
 export function buildDeckLayers({
   stations = [],
-  flows = [],
-  trips = [],
-  currentTime = 0,
-  trailLength = 35,
-  minAvailableBikes = 0,
-  visibility = { scatterplot: true, hexagon: true, arc: true, trips: true },
+  commuterIntent = "borrow", // 'borrow' | 'return'
+  selectedStation = null,
+  userLocation = null,
+  minThreshold = 0,
   beforeId = undefined,
   onStationClick = () => {},
   onHover = () => {},
 }) {
   const layers = [];
 
-  // 1. 模組 1：即時站點散佈點位圖層 (ScatterplotLayer)
-  // 整合 GPU 著色器硬體過濾 (DataFilterExtension) 與平滑補間動畫 (transitions)
-  if (visibility.scatterplot && stations.length > 0) {
+  // 1. 市民即時站點圖層 (ScatterplotLayer)
+  // 依據用車意圖動態著色：借車看可借車數，還車看可還空位
+  if (stations.length > 0) {
     layers.push(
       new ScatterplotLayer({
-        id: "layer-stations-scatterplot",
+        id: "layer-commuter-stations",
         data: stations,
         pickable: true,
-        opacity: 0.88,
+        opacity: 0.92,
         stroked: true,
         filled: true,
         radiusScale: 1,
-        radiusMinPixels: 4,
-        radiusMaxPixels: 16,
+        radiusMinPixels: 5,
+        radiusMaxPixels: 24,
         lineWidthMinPixels: 1.5,
         beforeId,
         getPosition: (d) => d.coordinates,
-        getRadius: (d) => Math.max(8, Math.min(24, d.totalBikes * 0.8)),
-        getFillColor: (d) => [...d.statusColor, 225],
-        getLineColor: [255, 255, 255, 200],
+        getRadius: (d) => {
+          if (selectedStation && selectedStation.id === d.id) {
+            return 22; // 選中站點放大醒目標示
+          }
+          const count =
+            commuterIntent === "borrow" ? d.availableBikes : d.emptySpaces;
+          return Math.max(7, Math.min(18, count * 0.8 + 5));
+        },
+        getFillColor: (d) => [
+          ...getStationStatusColor(d, commuterIntent),
+          selectedStation && selectedStation.id === d.id ? 255 : 225,
+        ],
+        getLineColor: (d) => {
+          if (selectedStation && selectedStation.id === d.id) {
+            return [255, 255, 255, 255]; // 選中站點高亮白外框
+          }
+          return [255, 255, 255, 160];
+        },
+        getLineWidth: (d) => {
+          if (selectedStation && selectedStation.id === d.id) {
+            return 3.5;
+          }
+          return 1.2;
+        },
         autoHighlight: true,
-        highlightColor: [255, 255, 255, 140],
-        // GPU 硬體著色器過濾
+        highlightColor: [255, 255, 255, 180],
+        // GPU 硬體著色器門檻過濾
         extensions: [new DataFilterExtension({ filterSize: 1 })],
-        getFilterValue: (d) => d.availableBikes,
-        filterRange: [minAvailableBikes, 200],
-        // GPU 屬性補間動畫
+        getFilterValue: (d) =>
+          commuterIntent === "borrow" ? d.availableBikes : d.emptySpaces,
+        filterRange: [minThreshold, 300],
+        // GPU 屬性補間平滑過渡
         transitions: {
-          getRadius: { duration: 300 },
-          getFillColor: { duration: 300 },
+          getRadius: { duration: 250 },
+          getFillColor: { duration: 250 },
         },
         onHover,
         onClick: (info) => {
@@ -70,76 +78,59 @@ export function buildDeckLayers({
             onStationClick(info.object);
           }
         },
+        updateTriggers: {
+          getRadius: [
+            commuterIntent,
+            selectedStation ? selectedStation.id : null,
+          ],
+          getFillColor: [
+            commuterIntent,
+            selectedStation ? selectedStation.id : null,
+          ],
+          getLineColor: [selectedStation ? selectedStation.id : null],
+          getLineWidth: [selectedStation ? selectedStation.id : null],
+          getFilterValue: [commuterIntent],
+        },
       })
     );
   }
 
-  // 2. 模組 2：3D 空間聚合蜂巢圖層 (HexagonLayer)
-  if (visibility.hexagon && stations.length > 0) {
+  // 2. 市民當前 GPS 位置光標 (User Location Pulse Marker)
+  if (userLocation && Array.isArray(userLocation)) {
     layers.push(
-      new HexagonLayer({
-        id: "layer-density-hexagon",
-        data: stations,
-        pickable: true,
-        extruded: true, // 啟用 3D 柱體擠出
-        radius: 160, // 六角半徑 160 公尺
-        elevationScale: 8, // 3D 高度乘數
-        elevationRange: [0, 800],
+      new ScatterplotLayer({
+        id: "layer-user-location-outer",
+        data: [{ coordinates: userLocation }],
+        pickable: false,
+        stroked: true,
+        filled: true,
+        radiusScale: 1,
+        radiusMinPixels: 14,
+        radiusMaxPixels: 28,
+        lineWidthMinPixels: 3,
         beforeId,
         getPosition: (d) => d.coordinates,
-        getElevationWeight: (d) => d.totalBikes || 1,
-        colorRange: HEXAGON_COLOR_RANGE,
-        opacity: 0.65,
-        coverage: 0.9,
-        material: {
-          ambient: 0.64,
-          diffuse: 0.6,
-          shininess: 32,
-          specularColor: [51, 51, 51],
+        getRadius: () => 20,
+        getFillColor: [59, 130, 246, 70], // 柔和藍色光暈
+        getLineColor: [59, 130, 246, 255],
+        transitions: {
+          getRadius: { duration: 400 },
         },
-        onHover,
-      })
-    );
-  }
-
-  // 3. 模組 3：熱門借還跨區起訖流向 (ArcLayer)
-  if (visibility.arc && flows.length > 0) {
-    layers.push(
-      new ArcLayer({
-        id: "layer-od-flows-arc",
-        data: flows,
-        pickable: true,
-        getWidth: 3.5,
+      }),
+      new ScatterplotLayer({
+        id: "layer-user-location-inner",
+        data: [{ coordinates: userLocation }],
+        pickable: false,
+        stroked: true,
+        filled: true,
+        radiusMinPixels: 6,
+        radiusMaxPixels: 10,
+        lineWidthMinPixels: 2.5,
         beforeId,
-        getSourcePosition: (d) => d.fromCoordinates,
-        getTargetPosition: (d) => d.toCoordinates,
-        getSourceColor: [59, 130, 246, 220],
-        getTargetColor: [236, 72, 153, 240],
-        autoHighlight: true,
-        highlightColor: [255, 255, 255, 160],
-        onHover,
-      })
-    );
-  }
-
-  // 4. 模組 3 擴展：動態時空軌跡 (TripsLayer)
-  if (visibility.trips && trips.length > 0) {
-    layers.push(
-      new TripsLayer({
-        id: "layer-mobility-trips",
-        data: trips,
-        pickable: true,
-        getPath: (d) => d.path,
-        getTimestamps: (d) => d.path.map((p) => p[2]),
-        getColor: (d) => d.color || [14, 165, 233],
-        opacity: 0.85,
-        widthMinPixels: 3.5,
-        capRounded: true,
-        jointRounded: true,
-        trailLength,
-        currentTime,
-        beforeId,
-        onHover,
+        getPosition: (d) => d.coordinates,
+        getRadius: () => 7,
+        getFillColor: [37, 99, 235, 255], // 核心實心藍
+        getLineColor: [255, 255, 255, 255], // 白色邊線
       })
     );
   }

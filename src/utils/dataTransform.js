@@ -68,6 +68,118 @@ export function filterStations(stations, criteria = {}) {
 }
 
 /**
+ * 計算兩組 [經度, 緯度] 座標之間的球面大圓距離 (公尺)
+ * @param {Array<number>} coord1 [lon1, lat1]
+ * @param {Array<number>} coord2 [lon2, lat2]
+ * @returns {number} 距離 (公尺)
+ */
+export function calculateDistance(coord1, coord2) {
+  if (!coord1 || !coord2) return 0;
+  const [lon1, lat1] = coord1;
+  const [lon2, lat2] = coord2;
+  const R = 6371e3; // 地球半徑 (公尺)
+  const phi1 = (lat1 * Math.PI) / 180;
+  const phi2 = (lat2 * Math.PI) / 180;
+  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) *
+      Math.cos(phi2) *
+      Math.sin(deltaLambda / 2) *
+      Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
+}
+
+/**
+ * 依據公尺距離推估步行時間 (分鐘)
+ * 常人步行速度約 4.8 km/h = 80 m/min
+ * @param {number} meters
+ * @returns {number}
+ */
+export function estimateWalkMinutes(meters) {
+  if (meters <= 0) return 0;
+  return Math.max(1, Math.round(meters / 80));
+}
+
+/**
+ * 依據用車意圖為站點取得狀態顏色
+ * @param {Object} station
+ * @param {'borrow' | 'return'} intent
+ * @returns {Array<number>} RGB 陣列
+ */
+export function getStationStatusColor(station, intent = "borrow") {
+  const count =
+    intent === "borrow" ? station.availableBikes : station.emptySpaces;
+  if (count === 0) return STATUS_COLORS.empty;
+  if (count < 3) return STATUS_COLORS.low;
+  return STATUS_COLORS.normal;
+}
+
+/**
+ * 智能救援：當目標站點缺車或滿位時，自動推薦步行半徑內車源或空位充足的備援替代站
+ * @param {Object} targetStation
+ * @param {Array} allStations
+ * @param {'borrow' | 'return'} intent
+ * @param {number} maxCount
+ * @param {number} maxDistance (公尺，預設 800)
+ * @returns {Array}
+ */
+export function findAlternativeStations(
+  targetStation,
+  allStations,
+  intent = "borrow",
+  maxCount = 2,
+  maxDistance = 800
+) {
+  if (!targetStation || !Array.isArray(allStations)) return [];
+
+  return allStations
+    .filter((s) => s.id !== targetStation.id)
+    .map((s) => {
+      const distance = calculateDistance(
+        targetStation.coordinates,
+        s.coordinates
+      );
+      return {
+        ...s,
+        distance,
+        walkMinutes: estimateWalkMinutes(distance),
+      };
+    })
+    .filter((s) => s.distance <= maxDistance)
+    .filter((s) =>
+      intent === "borrow" ? s.availableBikes >= 3 : s.emptySpaces >= 3
+    )
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, maxCount);
+}
+
+/**
+ * 模糊搜尋站點（支援站點名稱、路名或行政區）
+ * @param {Array} stations
+ * @param {string} query
+ * @param {number} maxResults
+ * @returns {Array}
+ */
+export function searchStations(stations, query, maxResults = 8) {
+  if (!Array.isArray(stations) || !query || !query.trim()) return [];
+  const q = query.trim().toLowerCase();
+
+  return stations
+    .filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.address.toLowerCase().includes(q) ||
+        s.district.toLowerCase().includes(q)
+    )
+    .slice(0, maxResults);
+}
+
+/**
  * 依據站點空間位置生成跨區熱門借還起訖流向 (OD Flows)
  * @param {Array} stations
  * @param {number} maxFlows
