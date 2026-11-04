@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Footprints,
   Clock,
+  Zap,
 } from "lucide-react";
 import { findAlternativeStations } from "../utils/dataTransform.js";
 
@@ -143,6 +144,22 @@ export function StationDetailCard({
             </div>
           </div>
         </div>
+
+        {/* 高雄在地特色：2.0E 智慧電輔車亮點標示 */}
+        {station.electricBikes > 0 && (
+          <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-gradient-to-r from-amber-500/20 to-yellow-500/10 border border-amber-500/30 text-amber-300">
+            <div className="flex items-center gap-1.5 text-xs font-bold">
+              <Zap size={14} className="text-amber-400 fill-amber-400" />
+              <span>YouBike 2.0E 智慧電輔車</span>
+            </div>
+            <div className="font-mono text-sm font-black text-amber-200">
+              {station.electricBikes}{" "}
+              <span className="text-[10px] font-normal text-amber-400/80">
+                台現有
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* 飽和度進度條 */}
         <div className="space-y-1">

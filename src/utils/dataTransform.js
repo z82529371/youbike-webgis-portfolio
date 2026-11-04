@@ -9,28 +9,43 @@ export function transformStationData(rawStations) {
   if (!Array.isArray(rawStations)) return [];
 
   return rawStations.map((raw) => {
-    let status = "normal";
-    const rentBikes = Number(raw.available_rent_bikes) || 0;
+    // 兼容官方 station-yb2 與政府開放資料兩套欄位命名
+    const id = String(raw.station_no || raw.sno || "");
+    const rawName = raw.name_tw || raw.sna || "";
+    const name = rawName.replace(/^YouBike2\.0_/, "");
+    const district = (raw.district_tw || raw.sarea || "").trim();
+    const address = raw.address_tw || raw.ar || "";
+    const lng = Number(raw.lng ?? raw.longitude) || 0;
+    const lat = Number(raw.lat ?? raw.latitude) || 0;
+    const totalBikes = Number(raw.parking_spaces ?? raw.total) || 0;
+    const availableBikes =
+      Number(raw.available_spaces ?? raw.available_rent_bikes) || 0;
+    const emptySpaces =
+      Number(raw.empty_spaces ?? raw.available_return_bikes) || 0;
+    // 高雄特色：2.0E 智慧電輔車數量
+    const electricBikes = Number(raw.available_spaces_detail?.eyb) || 0;
 
-    if (rentBikes === 0) {
+    let status = "normal";
+    if (availableBikes === 0) {
       status = "empty";
-    } else if (rentBikes < 3) {
+    } else if (availableBikes < 3) {
       status = "low";
     }
 
     return {
-      id: String(raw.sno),
-      name: (raw.sna || "").replace(/^YouBike2\.0_/, ""),
-      district: raw.sarea || "",
-      address: raw.ar || "",
+      id,
+      name,
+      district,
+      address,
       // GIS 核心觀念：座標順序必須為 [經度 Longitude, 緯度 Latitude]
-      coordinates: [Number(raw.longitude), Number(raw.latitude)],
-      totalBikes: Number(raw.total) || 0,
-      availableBikes: rentBikes,
-      emptySpaces: Number(raw.available_return_bikes) || 0,
+      coordinates: [lng, lat],
+      totalBikes,
+      availableBikes,
+      emptySpaces,
+      electricBikes,
       status,
       statusColor: STATUS_COLORS[status],
-      updateTime: raw.updateTime || "",
+      updateTime: raw.updated_at || raw.updateTime || "",
     };
   });
 }
@@ -177,6 +192,43 @@ export function searchStations(stations, query, maxResults = 8) {
         s.district.toLowerCase().includes(q)
     )
     .slice(0, maxResults);
+}
+
+/**
+ * 從指定站點群中動態計算行政區之外包矩形 (Bounding Box)
+ * @param {Array} stations
+ * @param {string} districtName
+ * @returns {Array<Array<number>> | null} [[minLng, minLat], [maxLng, maxLat]]
+ */
+export function getDistrictBoundsFromStations(stations, districtName) {
+  if (
+    !Array.isArray(stations) ||
+    !districtName ||
+    districtName === "全部行政區"
+  ) {
+    return null;
+  }
+
+  const inDistrict = stations.filter((s) => s.district === districtName);
+  if (inDistrict.length === 0) return null;
+
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+
+  for (const s of inDistrict) {
+    const [lng, lat] = s.coordinates;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+  }
+
+  return [
+    [minLng, minLat],
+    [maxLng, maxLat],
+  ];
 }
 
 /**

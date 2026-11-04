@@ -10,10 +10,12 @@ import {
   X,
   Compass,
 } from "lucide-react";
-import { DISTRICTS } from "../utils/constants.js";
+import { CITIES } from "../utils/constants.js";
 import { searchStations } from "../utils/dataTransform.js";
 
 export function CommuterNavbar({
+  currentCity = "kaohsiung",
+  onCityChange = () => {},
   commuterIntent = "borrow", // 'borrow' | 'return'
   onIntentChange = () => {},
   allStations = [],
@@ -34,6 +36,8 @@ export function CommuterNavbar({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchContainerRef = useRef(null);
+
+  const cityConfig = CITIES[currentCity] || CITIES.kaohsiung;
 
   // 模糊檢索建議清單
   const searchResults = useMemo(() => {
@@ -62,21 +66,34 @@ export function CommuterNavbar({
 
   return (
     <header className="absolute top-3 left-3 right-3 md:top-4 md:left-4 md:right-4 z-40 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 pointer-events-none">
-      {/* 左側：品牌標籤 + 借還意圖雙膠囊切換 */}
+      {/* 左側：雙城切換 (高雄 ⇄ 台北) + 借還意圖雙膠囊切換 */}
       <div className="flex items-center gap-2 pointer-events-auto">
-        {/* 品牌徽章 */}
-        <div className="hidden lg:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/70 shadow-xl text-white">
-          <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-black text-sm border border-amber-400/30">
-            2.0
-          </div>
-          <div>
-            <div className="font-extrabold text-xs tracking-tight text-slate-100">
-              YouBike 即時出行
-            </div>
-            <div className="text-[10px] text-slate-400 font-mono">
-              台北市生活導航
-            </div>
-          </div>
+        {/* 雙城切換器 (預設高雄市，可隨時切換台北) */}
+        <div className="flex items-center p-1 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl">
+          <button
+            type="button"
+            onClick={() => onCityChange("kaohsiung")}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              currentCity === "kaohsiung"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 scale-[1.02]"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <span>高雄市</span>
+            <span className="text-[10px] font-normal opacity-80">港都</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onCityChange("taipei")}
+            className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+              currentCity === "taipei"
+                ? "bg-sky-500 text-slate-950 shadow-md shadow-sky-500/30 scale-[1.02]"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <span>台北市</span>
+            <span className="text-[10px] font-normal opacity-80">首都</span>
+          </button>
         </div>
 
         {/* 核心用車意圖切換 (我要借車 ⇄ 我要還車) */}
@@ -84,25 +101,25 @@ export function CommuterNavbar({
           <button
             type="button"
             onClick={() => onIntentChange("borrow")}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
               commuterIntent === "borrow"
                 ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30 scale-[1.02]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
           >
-            <Bike size={16} />
+            <Bike size={15} />
             <span>我要借車</span>
           </button>
           <button
             type="button"
             onClick={() => onIntentChange("return")}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
               commuterIntent === "return"
                 ? "bg-gradient-to-r from-sky-500 to-indigo-500 text-white shadow-lg shadow-sky-500/30 scale-[1.02]"
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
           >
-            <ParkingSquare size={16} />
+            <ParkingSquare size={15} />
             <span>我要還車</span>
           </button>
         </div>
@@ -124,9 +141,9 @@ export function CommuterNavbar({
             }}
             onFocus={() => setIsSearchOpen(true)}
             placeholder={
-              commuterIntent === "borrow"
-                ? "搜尋站點、路名 (例如: 科技大樓、台大、台北車站)..."
-                : "搜尋目的地站點 (例如: 象山、市府、松山)..."
+              currentCity === "kaohsiung"
+                ? "搜尋高雄站點、路名 (例如: 美麗島、巨蛋、駁二、高鐵)..."
+                : "搜尋台北站點、路名 (例如: 科技大樓、台大、台北車站)..."
             }
             className="w-full bg-transparent text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none"
           />
@@ -167,8 +184,13 @@ export function CommuterNavbar({
                       className="text-sky-400 shrink-0 mt-0.5"
                     />
                     <div className="truncate">
-                      <div className="text-xs font-bold text-slate-100 group-hover:text-sky-400 truncate">
-                        {station.name}
+                      <div className="text-xs font-bold text-slate-100 group-hover:text-sky-400 truncate flex items-center gap-1.5">
+                        <span className="truncate">{station.name}</span>
+                        {station.electricBikes > 0 && (
+                          <span className="shrink-0 px-1.5 py-0.2 text-[9px] font-bold rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            ⚡2.0E {station.electricBikes}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-slate-400 truncate">
                         {station.district} · {station.address}
@@ -200,13 +222,13 @@ export function CommuterNavbar({
 
       {/* 右側：行政區快篩 + 我的位置 + 刷新同步 + 視角/外觀工具 */}
       <div className="flex items-center gap-1.5 md:gap-2 pointer-events-auto">
-        {/* 行政區下拉快篩 */}
+        {/* 行政區下拉快篩 (動態加載當前城市的行政區清單) */}
         <select
           value={selectedDistrict}
           onChange={(e) => onDistrictSelect(e.target.value)}
-          className="px-2.5 py-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 text-xs text-slate-200 font-medium focus:outline-none focus:border-sky-400 cursor-pointer shadow-lg"
+          className="px-2.5 py-1.5 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 text-xs text-slate-200 font-medium focus:outline-none focus:border-sky-400 cursor-pointer shadow-lg max-w-[130px]"
         >
-          {DISTRICTS.map((d) => (
+          {cityConfig.districts.map((d) => (
             <option key={d} value={d} className="bg-slate-900 text-slate-200">
               {d}
             </option>
@@ -231,7 +253,7 @@ export function CommuterNavbar({
           onClick={onRefresh}
           disabled={isLoading}
           title={`即時同步：${lastUpdated || "最新"} (${refreshCountdown}s 後自動刷新)`}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 text-slate-200 hover:border-emerald-500/50 transition-all cursor-pointer shadow-lg group"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 text-slate-200 hover:border-emerald-500/50 transition-all cursor-pointer shadow-lg group"
         >
           <RefreshCw
             size={14}
@@ -253,7 +275,7 @@ export function CommuterNavbar({
         <button
           type="button"
           onClick={onResetView}
-          title="重設台北市中心視角"
+          title={`重設${cityConfig.name}中心視角`}
           className="p-2 rounded-xl bg-slate-900/95 backdrop-blur-md border border-slate-700/80 text-slate-300 hover:text-slate-100 transition-all cursor-pointer shadow-lg"
         >
           <Compass size={16} />

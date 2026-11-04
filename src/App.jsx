@@ -10,12 +10,19 @@ import { CommuterNavbar } from "./components/CommuterNavbar.jsx";
 import { StationDetailCard } from "./components/StationDetailCard.jsx";
 import { MapTooltip } from "./components/MapTooltip.jsx";
 import { fetchLiveStations } from "./services/api.js";
-import { filterStations, calculateDistance } from "./utils/dataTransform.js";
+import {
+  filterStations,
+  calculateDistance,
+  getDistrictBoundsFromStations,
+} from "./utils/dataTransform.js";
 import { buildDeckLayers } from "./utils/layerBuilder.js";
-import { INITIAL_VIEW_STATE } from "./utils/constants.js";
+import { CITIES, DEFAULT_CITY } from "./utils/constants.js";
 import { DISTRICT_BOUNDS } from "./utils/taipeiDistricts.js";
 
 export function App() {
+  // 當前選定都會 (預設高雄市，面試高雄主場)
+  const [currentCity, setCurrentCity] = useState(DEFAULT_CITY);
+
   const [allStations, setAllStations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
@@ -44,39 +51,42 @@ export function App() {
   // 地圖實例參照
   const mapInstanceRef = useRef(null);
 
-  // 載入即時站點資料
-  const loadData = useCallback(async (showLoading = false) => {
-    if (showLoading) setIsLoading(true);
-    try {
-      const result = await fetchLiveStations();
-      setAllStations(result.stations);
-      setLastUpdated(result.lastUpdated);
-      setIsLiveSource(result.source === "live");
+  // 載入指定都會即時站點資料
+  const loadData = useCallback(
+    async (cityKey = currentCity, showLoading = false) => {
+      if (showLoading) setIsLoading(true);
+      try {
+        const result = await fetchLiveStations(cityKey);
+        setAllStations(result.stations);
+        setLastUpdated(result.lastUpdated);
+        setIsLiveSource(result.source === "live");
 
-      // 若當前有選取的站點，同步更新其即時車況數據
-      setSelectedStation((prev) => {
-        if (!prev) return null;
-        const updated = result.stations.find((s) => s.id === prev.id);
-        return updated || prev;
-      });
-    } catch (err) {
-      console.error("資料載入異常:", err);
-    } finally {
-      if (showLoading) setIsLoading(false);
-    }
-  }, []);
+        // 若當前有選取的站點，同步更新其即時車況數據
+        setSelectedStation((prev) => {
+          if (!prev) return null;
+          const updated = result.stations.find((s) => s.id === prev.id);
+          return updated || prev;
+        });
+      } catch (err) {
+        console.error("資料載入異常:", err);
+      } finally {
+        if (showLoading) setIsLoading(false);
+      }
+    },
+    [currentCity]
+  );
 
-  // 初始載入
+  // 初始載入（預設加載高雄）
   useEffect(() => {
-    loadData(true);
-  }, [loadData]);
+    loadData(currentCity, true);
+  }, [loadData, currentCity]);
 
   // 背景 60 秒自動靜默輪詢與倒數計時
   useEffect(() => {
     const timer = setInterval(() => {
       setRefreshCountdown((prev) => {
         if (prev <= 1) {
-          loadData(false);
+          loadData(currentCity, false);
           return 60;
         }
         return prev - 1;
@@ -84,13 +94,38 @@ export function App() {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [loadData]);
+  }, [loadData, currentCity]);
+
+  // 雙城無縫切換（高雄 ⇄ 台北）
+  const handleCityChange = useCallback(
+    (newCityKey) => {
+      if (newCityKey === currentCity) return;
+      setCurrentCity(newCityKey);
+      setSelectedDistrict("全部行政區");
+      setSelectedStation(null);
+      setRefreshCountdown(60);
+
+      const cityConf = CITIES[newCityKey] || CITIES.kaohsiung;
+      if (mapInstanceRef.current && cityConf.viewState) {
+        mapInstanceRef.current.flyTo({
+          center: [cityConf.viewState.longitude, cityConf.viewState.latitude],
+          zoom: cityConf.viewState.zoom,
+          pitch: cityConf.viewState.pitch,
+          bearing: cityConf.viewState.bearing,
+          duration: 2000,
+        });
+      }
+
+      loadData(newCityKey, true);
+    },
+    [currentCity, loadData]
+  );
 
   // 手動強制更新
   const handleManualRefresh = useCallback(() => {
     setRefreshCountdown(60);
-    loadData(true);
-  }, [loadData]);
+    loadData(currentCity, true);
+  }, [loadData, currentCity]);
 
   // 切換用車意圖
   const handleIntentChange = useCallback((intent) => {
@@ -110,43 +145,56 @@ export function App() {
     }
   }, []);
 
-  // 切換行政區並縮放至行政區外包矩形
-  const handleDistrictSelect = useCallback((district) => {
-    setSelectedDistrict(district);
-    const map = mapInstanceRef.current;
-    if (!map) return;
+  // 切換行政區並動態計算外包矩形平滑縮放
+  const handleDistrictSelect = useCallback(
+    (district) => {
+      setSelectedDistrict(district);
+      const map = mapInstanceRef.current;
+      if (!map) return;
 
-    if (district === "全部行政區" || district === "all") {
-      map.flyTo({
-        center: [INITIAL_VIEW_STATE.longitude, INITIAL_VIEW_STATE.latitude],
-        zoom: INITIAL_VIEW_STATE.zoom,
-        pitch: INITIAL_VIEW_STATE.pitch,
-        bearing: INITIAL_VIEW_STATE.bearing,
-        duration: 1200,
-      });
-    } else if (DISTRICT_BOUNDS[district]) {
-      map.fitBounds(DISTRICT_BOUNDS[district], {
-        padding: 50,
-        pitch: 35,
-        duration: 1200,
-      });
-    }
-  }, []);
+      const cityConf = CITIES[currentCity] || CITIES.kaohsiung;
 
-  // 重設台北市中心視角
+      if (district === "全部行政區" || district === "all") {
+        map.flyTo({
+          center: [cityConf.viewState.longitude, cityConf.viewState.latitude],
+          zoom: cityConf.viewState.zoom,
+          pitch: cityConf.viewState.pitch,
+          bearing: cityConf.viewState.bearing,
+          duration: 1200,
+        });
+        return;
+      }
+
+      // 優先使用動態站點外包矩形，若為台北且有靜態邊界亦可使用
+      const bounds =
+        getDistrictBoundsFromStations(allStations, district) ||
+        DISTRICT_BOUNDS[district];
+      if (bounds) {
+        map.fitBounds(bounds, {
+          padding: 50,
+          pitch: 35,
+          duration: 1200,
+        });
+      }
+    },
+    [currentCity, allStations]
+  );
+
+  // 重設當前都會中心視角
   const handleResetView = useCallback(() => {
     setSelectedDistrict("全部行政區");
     setSelectedStation(null);
+    const cityConf = CITIES[currentCity] || CITIES.kaohsiung;
     if (mapInstanceRef.current) {
       mapInstanceRef.current.flyTo({
-        center: [INITIAL_VIEW_STATE.longitude, INITIAL_VIEW_STATE.latitude],
-        zoom: INITIAL_VIEW_STATE.zoom,
-        pitch: INITIAL_VIEW_STATE.pitch,
-        bearing: INITIAL_VIEW_STATE.bearing,
+        center: [cityConf.viewState.longitude, cityConf.viewState.latitude],
+        zoom: cityConf.viewState.zoom,
+        pitch: cityConf.viewState.pitch,
+        bearing: cityConf.viewState.bearing,
         duration: 1200,
       });
     }
-  }, []);
+  }, [currentCity]);
 
   // 定位「我的位置」並推薦周圍最近可用站點
   const handleLocateMe = useCallback(() => {
@@ -171,7 +219,7 @@ export function App() {
           });
         }
 
-        // 自動找出距離市民最近且有車/有位的站點
+        // 自動找出周邊最近且符合借/還需求的站點
         if (allStations.length > 0) {
           const nearest = [...allStations]
             .map((s) => ({
@@ -227,10 +275,14 @@ export function App() {
     handleSelectStation,
   ]);
 
+  const currentCityConfig = CITIES[currentCity] || CITIES.kaohsiung;
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans select-none">
-      {/* 1. 頂部生活出行膠囊導航 (我要借車 / 我要還車 + 站點搜尋 + 定位) */}
+      {/* 1. 頂部生活出行膠囊導航 (雙城切換 + 我要借車 / 我要還車 + 站點搜尋 + 定位) */}
       <CommuterNavbar
+        currentCity={currentCity}
+        onCityChange={handleCityChange}
         commuterIntent={commuterIntent}
         onIntentChange={handleIntentChange}
         allStations={allStations}
@@ -261,7 +313,7 @@ export function App() {
       {/* 3. 游標懸停 Tooltip */}
       <MapTooltip hoverInfo={hoverInfo} commuterIntent={commuterIntent} />
 
-      {/* 4. 底部即時車況卡 + 智能救援備援替代站 (選取站點時浮現) */}
+      {/* 4. 底部即時車況卡 + 2.0E 電輔車亮點 + 智能救援備援站 */}
       <StationDetailCard
         station={selectedStation}
         allStations={allStations}
@@ -273,12 +325,12 @@ export function App() {
       {/* 首次載入全屏遮罩 */}
       {isLoading && allStations.length === 0 && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md text-white">
-          <div className="w-12 h-12 border-4 border-emerald-500/30 border-t-emerald-400 rounded-full animate-spin mb-4" />
+          <div className="w-12 h-12 border-4 border-amber-500/30 border-t-amber-400 rounded-full animate-spin mb-4" />
           <p className="text-sm font-bold tracking-wide">
-            正在連線台北市 YouBike 2.0 即時開放資料...
+            正在連線 {currentCityConfig.name} YouBike 2.0 即時開放資料...
           </p>
           <span className="text-xs text-slate-400 mt-1 font-mono">
-            Taipei Open Data Real-Time Ingestion
+            {currentCityConfig.name} Open Data Real-Time Ingestion
           </span>
         </div>
       )}

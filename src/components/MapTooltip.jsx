@@ -1,5 +1,5 @@
 import React from "react";
-import { Bike, ParkingSquare } from "lucide-react";
+import { Bike, ParkingSquare, Zap } from "lucide-react";
 
 export function MapTooltip({ hoverInfo, commuterIntent = "borrow" }) {
   if (!hoverInfo || !hoverInfo.object) return null;
@@ -45,6 +45,18 @@ export function MapTooltip({ hoverInfo, commuterIntent = "borrow" }) {
             {object.availableBikes} 台
           </span>
         </div>
+
+        {object.electricBikes > 0 && (
+          <div className="flex items-center justify-between gap-3 px-1.5 py-0.5 rounded-lg bg-amber-950/40 text-amber-300">
+            <span className="flex items-center gap-1 text-[11px] font-medium text-amber-400">
+              <Zap size={11} className="fill-amber-400" />
+              2.0E 電輔車
+            </span>
+            <span className="font-bold text-amber-300">
+              {object.electricBikes} 台
+            </span>
+          </div>
+        )}
 
         <div
           className={`flex items-center justify-between gap-3 px-1.5 py-0.5 rounded-lg ${

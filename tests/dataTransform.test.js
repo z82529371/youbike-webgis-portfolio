@@ -9,6 +9,7 @@ import {
   getStationStatusColor,
   findAlternativeStations,
   searchStations,
+  getDistrictBoundsFromStations,
 } from "../src/utils/dataTransform.js";
 
 describe("WebGIS Data Transformation Seams (JavaScript)", () => {
@@ -203,6 +204,47 @@ describe("WebGIS Data Transformation Seams (JavaScript)", () => {
 
       const byAddress = searchStations(stations, "和平東路");
       expect(byAddress).toHaveLength(1);
+    });
+
+    it("parses Kaohsiung YouBike 2.0 and 2.0E format correctly", () => {
+      const mockKaohsiungRaw = [
+        {
+          station_no: "501201001",
+          name_tw: "捷運美麗島站(10號出口)",
+          district_tw: "新興區",
+          address_tw: "中山一路168號前方",
+          lat: 22.63213,
+          lng: 120.30212,
+          parking_spaces: 25,
+          available_spaces: 14,
+          empty_spaces: 11,
+          available_spaces_detail: {
+            yb2: 10,
+            eyb: 4,
+          },
+          updated_at: "2026-11-04 22:00:00",
+        },
+      ];
+
+      const result = transformStationData(mockKaohsiungRaw);
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe("501201001");
+      expect(result[0].name).toBe("捷運美麗島站(10號出口)");
+      expect(result[0].district).toBe("新興區");
+      expect(result[0].coordinates).toEqual([120.30212, 22.63213]);
+      expect(result[0].totalBikes).toBe(25);
+      expect(result[0].availableBikes).toBe(14);
+      expect(result[0].emptySpaces).toBe(11);
+      expect(result[0].electricBikes).toBe(4); // 2.0E
+      expect(result[0].status).toBe("normal");
+    });
+
+    it("computes district bounds accurately from stations", () => {
+      const bounds = getDistrictBoundsFromStations(stations, "大安區");
+      expect(bounds).not.toBeNull();
+      const [[minLng, minLat], [maxLng, maxLat]] = bounds;
+      expect(minLng).toBeLessThanOrEqual(maxLng);
+      expect(minLat).toBeLessThanOrEqual(maxLat);
     });
   });
 });
